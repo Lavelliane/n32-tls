@@ -127,16 +127,22 @@ class PerformanceMonitor:
         """
         Analyze handshake results and calculate statistics by variant
         """
-        variant_data = defaultdict(list)
+        variant_data = defaultdict(lambda: {'times': [], 'message_sizes': [], 'round_trips': []})
         
         # Group results by variant
         for result in results:
             if result.success:
-                variant_data[result.variant].append(result.total_time * 1000)  # Convert to ms
+                variant_data[result.variant]['times'].append(result.total_time * 1000)  # Convert to ms
+                variant_data[result.variant]['message_sizes'].append(result.total_message_size)
+                variant_data[result.variant]['round_trips'].append(result.round_trips)
         
         # Calculate statistics for each variant
         statistics_by_variant = {}
-        for variant, times in variant_data.items():
+        for variant, data in variant_data.items():
+            times = data['times']
+            message_sizes = data['message_sizes']
+            round_trips = data['round_trips']
+            
             if times:
                 statistics_by_variant[variant] = {
                     'count': len(times),
@@ -147,6 +153,8 @@ class PerformanceMonitor:
                     'max_ms': max(times),
                     'p95_ms': np.percentile(times, 95),
                     'p99_ms': np.percentile(times, 99),
+                    'mean_message_size_bytes': statistics.mean(message_sizes),
+                    'mean_round_trips': statistics.mean(round_trips),
                     'success_rate': len(times) / len([r for r in results if r.variant == variant])
                 }
         
@@ -290,14 +298,18 @@ class PerformanceMonitor:
             # Plot 2: Latency distribution (box plot)
             self._plot_latency_distribution(report, output_dir)
             
-            # Plot 3: Load test scalability (if load test)
+            # Plot 3: Message size analysis (for geographical tests)
+            if report.test_config.test_type == "geographical":
+                self._plot_message_size_analysis(report, output_dir)
+            
+            # Plot 4: Load test scalability (if load test)
             if report.test_config.test_type == "load":
                 self._plot_load_test_scalability(report, output_dir)
             
-            # Plot 4: System resource usage over time
+            # Plot 5: System resource usage over time
             self._plot_system_metrics(report, output_dir)
             
-            # Plot 5: Success rate by variant
+            # Plot 6: Success rate by variant
             self._plot_success_rates(report, output_dir)
         except Exception as e:
             print(f"Warning: Could not create plots: {e}")
@@ -576,6 +588,135 @@ class PerformanceMonitor:
         plt.tight_layout()
         plt.savefig(f"{output_dir}/success_rates.png", dpi=300, bbox_inches='tight')
         plt.close()
+    
+    def _plot_message_size_analysis(self, report: PerformanceReport, output_dir: str):
+        """Plot message size analysis for TLS variants in geographical scenarios"""
+        variants = []
+        message_sizes = []
+        round_trips = []
+        colors = []
+        
+        # Extract message size data from variant statistics
+        for variant, stats in report.variant_statistics.items():
+            if 'mean_message_size_bytes' in stats and 'mean_round_trips' in stats:
+                variants.append(self._format_variant_name(variant))
+                message_sizes.append(stats['mean_message_size_bytes'])
+                round_trips.append(stats['mean_round_trips'])
+                colors.append(self._get_method_color(variant))
+        
+        if not variants:
+            return
+        
+        # Create figure with two subplots
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+        plt.rcParams.update({'font.size': 12})
+        
+        # Plot 1: Message Size Comparison
+        bars1 = ax1.bar(variants, message_sizes, color=colors, alpha=0.8, edgecolor='black', linewidth=0.8)
+        ax1.set_title('TLS Message Size Comparison\nGeographical Cross-Border Scenarios', fontsize=16, fontweight='bold')
+        ax1.set_xlabel('TLS Variant by Region', fontsize=14)
+        ax1.set_ylabel('Total Message Size (Bytes)', fontsize=14)
+        ax1.tick_params(axis='x', rotation=45)
+        
+        # Add value labels on bars
+        for bar, size in zip(bars1, message_sizes):
+            ax1.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 20,
+                    f'{int(size)} B', ha='center', va='bottom', fontsize=10, fontweight='bold')
+        
+        # Plot 2: Round Trip Analysis
+        bars2 = ax2.bar(variants, round_trips, color=colors, alpha=0.8, edgecolor='black', linewidth=0.8)
+        ax2.set_title('Round Trip Comparison\nGeographical Cross-Border Scenarios', fontsize=16, fontweight='bold')
+        ax2.set_xlabel('TLS Variant by Region', fontsize=14)
+        ax2.set_ylabel('Number of Round Trips', fontsize=14)
+        ax2.tick_params(axis='x', rotation=45)
+        ax2.set_ylim(0, max(round_trips) + 0.5)
+        
+        # Add value labels on bars
+        for bar, rtt in zip(bars2, round_trips):
+            ax2.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.05,
+                    f'{rtt:.1f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+        
+        # Add legend for TLS methods (shared between plots)
+        legend_elements = []
+        seen_methods = set()
+        for variant_orig in report.variant_statistics.keys():
+            method = variant_orig.split('_geo_')[0] if '_geo_' in variant_orig else variant_orig
+            if method not in seen_methods:
+                method_name = {
+                    '0rtt': '0-RTT (Zero RTT)',
+                    '0rtt_fs': '0-RTT FS (Novel)',
+                    'psk_only': 'PSK-Only', 
+                    'psk_ecdhe': 'PSK-ECDHE',
+                    'full_handshake': 'Full Handshake'
+                }.get(method, method)
+                
+                legend_elements.append(plt.Rectangle((0,0),1,1, 
+                                                   facecolor=self._get_method_color(method), 
+                                                   alpha=0.8, edgecolor='black', linewidth=0.8,
+                                                   label=method_name))
+                seen_methods.add(method)
+        
+        if legend_elements:
+            fig.legend(handles=legend_elements, loc='upper center', bbox_to_anchor=(0.5, 0.95), 
+                      ncol=len(legend_elements), fontsize=12)
+        
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.85)  # Make room for legend
+        plt.savefig(f"{output_dir}/message_size_analysis.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # Create a detailed message size breakdown table
+        self._create_message_size_table(report, output_dir)
+    
+    def _create_message_size_table(self, report: PerformanceReport, output_dir: str):
+        """Create a detailed table showing message size breakdown by TLS variant"""
+        table_data = []
+        
+        for variant, stats in report.variant_statistics.items():
+            if 'mean_message_size_bytes' in stats:
+                # Extract method and region
+                if '_geo_' in variant:
+                    method, region = variant.split('_geo_')
+                else:
+                    method, region = variant, 'Local'
+                
+                table_data.append({
+                    'TLS Method': method.upper().replace('_', '-'),
+                    'Region': region.capitalize(),
+                    'Message Size (B)': int(stats['mean_message_size_bytes']),
+                    'Round Trips': f"{stats['mean_round_trips']:.1f}",
+                    'Avg Latency (ms)': f"{stats['mean_ms']:.2f}",
+                    'Success Rate (%)': f"{stats['success_rate']*100:.1f}"
+                })
+        
+        if table_data:
+            # Sort by message size
+            table_data.sort(key=lambda x: x['Message Size (B)'])
+            
+            # Create formatted table
+            table_text = "TLS 1.3 Message Size Analysis - Geographical Cross-Border Scenarios\n"
+            table_text += "=" * 80 + "\n\n"
+            
+            # Header
+            header = f"{'TLS Method':<12} {'Region':<10} {'Size (B)':<10} {'RTT':<6} {'Latency (ms)':<12} {'Success (%)':<10}\n"
+            table_text += header
+            table_text += "-" * 80 + "\n"
+            
+            # Data rows
+            for row in table_data:
+                line = f"{row['TLS Method']:<12} {row['Region']:<10} {row['Message Size (B)']:<10} {row['Round Trips']:<6} {row['Avg Latency (ms)']:<12} {row['Success Rate (%)']:<10}\n"
+                table_text += line
+            
+            table_text += "\n" + "=" * 80 + "\n"
+            table_text += "Key Insights:\n"
+            table_text += "• 0-RTT variants have larger message sizes due to early data inclusion\n"
+            table_text += "• 0-RTT FS has slight overhead for forward secrecy extensions\n"
+            table_text += "• PSK variants have smaller messages but require round trips\n"
+            table_text += "• Network latency dominates performance in geographical scenarios\n"
+            
+            # Save table to file
+            with open(f"{output_dir}/message_size_analysis.txt", 'w') as f:
+                f.write(table_text)
     
     def _format_variant_name(self, variant: str) -> str:
         """Format variant name for display in research papers"""

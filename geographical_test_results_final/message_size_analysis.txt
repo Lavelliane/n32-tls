@@ -1,0 +1,24 @@
+TLS 1.3 Message Size Analysis - Geographical Cross-Border Scenarios
+================================================================================
+
+TLS Method   Region     Size (B)   RTT    Latency (ms) Success (%)
+--------------------------------------------------------------------------------
+PSK-ONLY     Europe     512        1.0    60.88        100.0     
+PSK-ONLY     Americas   512        1.0    78.65        100.0     
+PSK-ONLY     Middle_east 512        1.0    62.60        100.0     
+PSK-ECDHE    Europe     640        1.0    61.30        100.0     
+PSK-ECDHE    Americas   640        1.0    78.88        100.0     
+PSK-ECDHE    Middle_east 640        1.0    63.07        100.0     
+0RTT         Europe     1408       0.0    59.79        100.0     
+0RTT         Americas   1408       0.0    77.57        100.0     
+0RTT         Middle_east 1408       0.0    61.45        100.0     
+0RTT-FS      Europe     1456       0.0    60.12        100.0     
+0RTT-FS      Americas   1456       0.0    78.07        100.0     
+0RTT-FS      Middle_east 1456       0.0    61.75        100.0     
+
+================================================================================
+Key Insights:
+• 0-RTT variants have larger message sizes due to early data inclusion
+• 0-RTT FS has slight overhead for forward secrecy extensions
+• PSK variants have smaller messages but require round trips
+• Network latency dominates performance in geographical scenarios

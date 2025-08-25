@@ -150,6 +150,7 @@ class SEPPSimulator:
                     round_trips=0,
                     bytes_sent=0,
                     bytes_received=0,
+                    total_message_size=0,
                     crypto_operations={},
                     success=False,
                     error_message=f"Unknown request type: {request_type}"
@@ -177,6 +178,7 @@ class SEPPSimulator:
                     round_trips=0,
                     bytes_sent=0,
                     bytes_received=0,
+                    total_message_size=0,
                     crypto_operations={},
                     success=False,
                     error_message=str(e)
@@ -343,6 +345,7 @@ class SEPPSimulator:
                 round_trips=0,
                 bytes_sent=0,
                 bytes_received=0,
+                total_message_size=0,
                 crypto_operations={},
                 success=False,
                 error_message=str(e)
@@ -441,6 +444,7 @@ class SEPPSimulator:
                             round_trips=0,
                             bytes_sent=0,
                             bytes_received=0,
+                            total_message_size=0,
                             crypto_operations={},
                             success=False,
                             error_message=str(e)
